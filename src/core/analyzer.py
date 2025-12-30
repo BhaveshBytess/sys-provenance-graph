@@ -768,3 +768,228 @@ def enrich_anomalies_with_chains(
     return chains
 
 
+# =============================================================================
+# Report Assembly (Phase 6)
+# =============================================================================
+
+# Risk level to numeric score mapping (MAX method)
+# Higher scores indicate greater risk
+RISK_LEVEL_SCORES: dict[str, int] = {
+    "LOW": 10,
+    "MEDIUM": 40,
+    "HIGH": 70,
+    "CRITICAL": 100,
+}
+
+
+def assemble_report(
+    anomalies: list[AnomalyResult],
+    chains: dict[str, list[str]],
+    event_index: dict[str, "CanonicalEvent"],
+    baseline: BaselineProfile,
+    events_processed: int,
+) -> "AnalysisReport":
+    """
+    Assemble a complete AnalysisReport from detection results.
+    
+    This function converts internal detection artifacts (AnomalyResult, chains)
+    into the canonical output contract (AnalysisReport) as defined in CONTRACTS.md.
+    
+    No semantic inference or interpretive labels are added - the report is a
+    pure translation of the detection data.
+    
+    Args:
+        anomalies: List of AnomalyResult objects from detect_anomalies().
+        chains: Dictionary mapping event GUIDs to their reconstructed chains.
+        event_index: Pre-built GUID → CanonicalEvent lookup index for entity resolution.
+        baseline: The BaselineProfile used for detection.
+        events_processed: Total number of events that were analyzed.
+    
+    Returns:
+        A valid, immutable AnalysisReport conforming to the output contract.
+    
+    Example:
+        >>> anomalies = detect_anomalies(events, baseline)
+        >>> index = build_event_index(events)
+        >>> chains = enrich_anomalies_with_chains(anomalies, index)
+        >>> report = assemble_report(anomalies, chains, index, baseline, len(events))
+    """
+    from datetime import datetime
+    from uuid import uuid4
+    
+    from src.core.events import (
+        AnalysisReport,
+        Anomaly,
+        InvolvedEntity,
+        EntityRole,
+        ReportMetadata,
+    )
+    
+    # Build Anomaly objects from AnomalyResults
+    anomaly_models: list[Anomaly] = []
+    
+    for result in anomalies:
+        event_guid = result.event.subject.guid
+        chain = chains.get(event_guid, [event_guid])
+        
+        # Build involved entities from chain GUIDs
+        involved_entities = _build_involved_entities(chain, event_index)
+        
+        anomaly_model = Anomaly(
+            id=str(uuid4()),
+            risk_level=result.risk_level,
+            confidence=result.confidence,
+            description=result.description,
+            chain=chain,
+            involved_entities=involved_entities,
+        )
+        anomaly_models.append(anomaly_model)
+    
+    # Calculate global risk score using MAX method
+    global_risk_score = _calculate_global_risk_score(anomalies)
+    
+    # Build summary
+    summary = _build_summary(anomalies, global_risk_score)
+    
+    # Build metadata
+    metadata = ReportMetadata(
+        events_processed=events_processed,
+        model_version=baseline.version,
+    )
+    
+    # Assemble final report
+    report = AnalysisReport(
+        analysis_id=uuid4(),
+        timestamp=datetime.now(),
+        global_risk_score=global_risk_score,
+        summary=summary,
+        anomalies=anomaly_models,
+        metadata=metadata,
+    )
+    
+    return report
+
+
+def _build_involved_entities(
+    chain: list[str],
+    event_index: dict[str, "CanonicalEvent"],
+) -> list["InvolvedEntity"]:
+    """
+    Build InvolvedEntity objects from chain GUIDs.
+    
+    Resolves entity attributes (image, pid) using the event_index.
+    Deduplicates entities by GUID.
+    
+    Args:
+        chain: Ordered list of process GUIDs (root → leaf).
+        event_index: GUID → CanonicalEvent lookup for resolution.
+    
+    Returns:
+        List of InvolvedEntity objects for the chain.
+    """
+    from src.core.events import InvolvedEntity, EntityRole
+    
+    entities: list[InvolvedEntity] = []
+    seen_guids: set[str] = set()
+    
+    for idx, guid in enumerate(chain):
+        # Deduplicate by GUID
+        if guid in seen_guids:
+            continue
+        seen_guids.add(guid)
+        
+        # Resolve entity details from event_index
+        event = event_index.get(guid)
+        
+        if event is not None:
+            image = event.subject.image
+        else:
+            # GUID not in index - use placeholder
+            image = "<unknown>"
+        
+        # Determine role: last in chain is the anomalous event (CHILD),
+        # all others are ancestors (PARENT)
+        is_leaf = (idx == len(chain) - 1)
+        role = EntityRole.CHILD if is_leaf else EntityRole.PARENT
+        
+        entity = InvolvedEntity(
+            guid=guid,
+            image=image,
+            role=role,
+        )
+        entities.append(entity)
+    
+    return entities
+
+
+def _calculate_global_risk_score(anomalies: list[AnomalyResult]) -> int:
+    """
+    Calculate global risk score using the MAX method.
+    
+    The global score equals the highest individual anomaly score.
+    This is deterministic given the same inputs.
+    
+    Risk score mapping:
+    - LOW: 10
+    - MEDIUM: 40
+    - HIGH: 70
+    - CRITICAL: 100
+    
+    Args:
+        anomalies: List of detected anomalies.
+    
+    Returns:
+        Global risk score (0-100). Returns 0 if no anomalies.
+    """
+    if not anomalies:
+        return 0
+    
+    max_score = 0
+    for anomaly in anomalies:
+        risk_value = anomaly.risk_level.value  # e.g., "CRITICAL"
+        score = RISK_LEVEL_SCORES.get(risk_value, 0)
+        if score > max_score:
+            max_score = score
+    
+    return max_score
+
+
+def _build_summary(anomalies: list[AnomalyResult], global_risk_score: int) -> str:
+    """
+    Build a human-readable summary of findings.
+    
+    No semantic inference or interpretive labels are added.
+    The summary is a factual statement of detection results.
+    
+    Args:
+        anomalies: List of detected anomalies.
+        global_risk_score: Calculated global risk score.
+    
+    Returns:
+        Human-readable summary string.
+    """
+    if not anomalies:
+        return "No anomalies detected. All analyzed events conform to baseline behavior."
+    
+    # Count by risk level
+    risk_counts: dict[str, int] = {}
+    for anomaly in anomalies:
+        level = anomaly.risk_level.value
+        risk_counts[level] = risk_counts.get(level, 0) + 1
+    
+    # Build risk breakdown string
+    breakdown_parts = []
+    for level in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+        count = risk_counts.get(level, 0)
+        if count > 0:
+            breakdown_parts.append(f"{count} {level}")
+    
+    breakdown = ", ".join(breakdown_parts)
+    
+    return (
+        f"Detected {len(anomalies)} anomalies ({breakdown}). "
+        f"Global risk score: {global_risk_score}/100."
+    )
+
+
+
