@@ -1,7 +1,8 @@
 """
-test_analyzer.py - Unit tests for the baseline profiler.
+test_analyzer.py - Unit tests for the baseline profiler and anomaly detection.
 
-Verifies baseline construction, serialization, and deterministic output.
+Verifies baseline construction, serialization, deterministic output,
+and anomaly detection logic.
 """
 
 import json
@@ -14,8 +15,13 @@ import pytest
 
 from src.core.analyzer import (
     BASELINE_VERSION,
+    RARITY_COUNT_THRESHOLD,
+    RARITY_PERCENTAGE_THRESHOLD,
+    AnomalyReason,
+    AnomalyResult,
     BaselineProfile,
     build_baseline,
+    detect_anomalies,
     load_baseline,
     save_baseline,
     update_baseline,
@@ -28,6 +34,7 @@ from src.core.events import (
     Object,
     ObjectType,
     Parent,
+    RiskLevel,
     Subject,
 )
 
@@ -466,3 +473,326 @@ class TestErrorHandling:
         save_baseline(profile, deep_path)
         
         assert deep_path.exists()
+
+
+# =============================================================================
+# Anomaly Detection Tests (Phase 4)
+# =============================================================================
+
+
+class TestAnomalyDetectionBasics:
+    """Basic tests for anomaly detection functionality."""
+
+    def test_unknown_relationship_flagged_as_anomaly(self) -> None:
+        """Unknown relationship (not in baseline) should be flagged."""
+        # Build baseline with known relationship
+        baseline_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 5  # Above threshold
+        baseline = build_baseline(baseline_events)
+        
+        # Test with unknown relationship
+        unknown_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),  # Unknown
+        ]
+        
+        anomalies = detect_anomalies(unknown_events, baseline)
+        
+        assert len(anomalies) == 1
+        assert anomalies[0].reason == AnomalyReason.UNKNOWN
+        assert anomalies[0].observed_count == 0
+
+    def test_known_relationship_not_flagged(self) -> None:
+        """Known relationship (in baseline, above threshold) should NOT be flagged."""
+        # Build baseline with known relationship (high count)
+        baseline_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 100  # Well above any threshold
+        baseline = build_baseline(baseline_events)
+        
+        # Test with known relationship
+        known_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        
+        anomalies = detect_anomalies(known_events, baseline)
+        
+        assert len(anomalies) == 0
+
+    def test_empty_events_returns_empty_list(self) -> None:
+        """Empty event list should return empty anomaly list."""
+        baseline = build_baseline([
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ])
+        
+        anomalies = detect_anomalies([], baseline)
+        
+        assert anomalies == []
+
+
+class TestRarityDetection:
+    """Tests for rare relationship detection."""
+
+    def test_rare_by_count_flagged(self) -> None:
+        """Relationship below count threshold should be flagged as RARE."""
+        # Build baseline with relationship seen only once
+        baseline_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        baseline = build_baseline(baseline_events)
+        
+        # Test same relationship (count=1, below default threshold of 3)
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        
+        anomalies = detect_anomalies(test_events, baseline)
+        
+        assert len(anomalies) == 1
+        assert anomalies[0].reason == AnomalyReason.RARE
+        assert anomalies[0].observed_count == 1
+
+    def test_custom_count_threshold(self) -> None:
+        """Custom rarity count threshold should be respected."""
+        # Build baseline with relationship seen 5 times
+        baseline_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 5
+        baseline = build_baseline(baseline_events)
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        
+        # With threshold=3, count=5 should NOT be flagged
+        anomalies = detect_anomalies(
+            test_events, baseline, rarity_count_threshold=3
+        )
+        assert len(anomalies) == 0
+        
+        # With threshold=10, count=5 should be flagged
+        anomalies = detect_anomalies(
+            test_events, baseline, rarity_count_threshold=10
+        )
+        assert len(anomalies) == 1
+
+
+class TestRiskLevelAssignment:
+    """Tests verifying statistical risk level assignment."""
+
+    def test_unknown_gets_critical_risk(self) -> None:
+        """Unknown relationship should get CRITICAL risk level."""
+        baseline = build_baseline([
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 10)
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),  # Unknown
+        ]
+        
+        anomalies = detect_anomalies(test_events, baseline)
+        
+        assert anomalies[0].risk_level == RiskLevel.CRITICAL
+
+    def test_rare_by_count_gets_high_risk(self) -> None:
+        """Rare by count should get HIGH risk level."""
+        baseline = build_baseline([
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ])  # Count = 1
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        
+        anomalies = detect_anomalies(test_events, baseline, rarity_count_threshold=3)
+        
+        assert anomalies[0].risk_level == RiskLevel.HIGH
+
+    def test_risk_based_on_statistics_not_domain_semantics(self) -> None:
+        """Risk level must be based on statistics, not domain knowledge."""
+        # Even "suspicious" looking process paths should only get
+        # statistical risk, not elevated risk due to domain semantics
+        baseline = build_baseline([
+            create_canonical_event("/bin/sudo", "/bin/rm", "root"),
+        ] * 100)  # Common enough to be "normal"
+        
+        test_events = [
+            create_canonical_event("/bin/sudo", "/bin/rm", "root"),
+        ]
+        
+        # Should NOT be flagged - it's statistically normal
+        anomalies = detect_anomalies(test_events, baseline)
+        assert len(anomalies) == 0
+
+
+class TestBaselineImmutability:
+    """Tests verifying baseline is not mutated during detection."""
+
+    def test_detection_does_not_modify_baseline(self) -> None:
+        """Detection must NOT modify the baseline (read-only)."""
+        baseline_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 5
+        baseline = build_baseline(baseline_events)
+        
+        # Capture baseline state before detection
+        original_count = baseline.get_relationship_count(
+            "/bin/bash", "/usr/bin/python3", "root"
+        )
+        original_total = baseline.total_events
+        original_relationships = dict(baseline.relationships)
+        
+        # Run detection with unknown relationships
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),
+            create_canonical_event("/bin/bash", "/usr/bin/wget", "testuser"),
+        ]
+        detect_anomalies(test_events, baseline)
+        
+        # Verify baseline unchanged
+        assert baseline.get_relationship_count(
+            "/bin/bash", "/usr/bin/python3", "root"
+        ) == original_count
+        assert baseline.total_events == original_total
+        assert dict(baseline.relationships) == original_relationships
+
+    def test_multiple_detections_same_baseline(self) -> None:
+        """Running detection multiple times should give same results."""
+        baseline = build_baseline([
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 10)
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),
+        ]
+        
+        # Run detection multiple times
+        results1 = detect_anomalies(test_events, baseline)
+        results2 = detect_anomalies(test_events, baseline)
+        results3 = detect_anomalies(test_events, baseline)
+        
+        # Results should be identical
+        assert len(results1) == len(results2) == len(results3)
+        assert results1[0].reason == results2[0].reason == results3[0].reason
+
+
+class TestDetectionStrictTyping:
+    """Tests for strict typing in detection function."""
+
+    def test_rejects_raw_dictionaries(self) -> None:
+        """Detection must reject raw dictionaries."""
+        baseline = BaselineProfile()
+        
+        with pytest.raises(TypeError) as exc_info:
+            detect_anomalies([{"raw": "dict"}], baseline)  # type: ignore
+        
+        assert "CanonicalEvent" in str(exc_info.value)
+
+    def test_rejects_json_string(self) -> None:
+        """Detection must reject JSON strings."""
+        baseline = BaselineProfile()
+        
+        with pytest.raises(TypeError) as exc_info:
+            detect_anomalies('{"json": "string"}', baseline)  # type: ignore
+        
+        assert "list" in str(exc_info.value).lower()
+
+    def test_accepts_canonical_events_only(self) -> None:
+        """Detection must accept only list[CanonicalEvent]."""
+        baseline = build_baseline([
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ] * 10)
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),
+        ]
+        
+        # Should not raise
+        anomalies = detect_anomalies(test_events, baseline)
+        assert isinstance(anomalies, list)
+
+
+class TestAnomalyResultStructure:
+    """Tests for AnomalyResult data structure."""
+
+    def test_anomaly_result_contains_event(self) -> None:
+        """AnomalyResult should contain the triggering event."""
+        baseline = BaselineProfile()
+        
+        test_event = create_canonical_event("/bin/bash", "/usr/bin/curl", "root")
+        anomalies = detect_anomalies([test_event], baseline)
+        
+        assert anomalies[0].event == test_event
+
+    def test_anomaly_result_contains_relationship_key(self) -> None:
+        """AnomalyResult should contain the relationship tuple."""
+        baseline = BaselineProfile()
+        
+        test_event = create_canonical_event("/bin/bash", "/usr/bin/curl", "testuser")
+        anomalies = detect_anomalies([test_event], baseline)
+        
+        assert anomalies[0].relationship_key == (
+            "/bin/bash", "/usr/bin/curl", "testuser"
+        )
+
+    def test_anomaly_result_contains_description(self) -> None:
+        """AnomalyResult should contain a human-readable description."""
+        baseline = BaselineProfile()
+        
+        test_event = create_canonical_event("/bin/bash", "/usr/bin/curl", "root")
+        anomalies = detect_anomalies([test_event], baseline)
+        
+        assert len(anomalies[0].description) > 0
+        assert "/bin/bash" in anomalies[0].description
+        assert "/usr/bin/curl" in anomalies[0].description
+
+    def test_anomaly_result_confidence_in_range(self) -> None:
+        """Confidence score should be between 0.0 and 1.0."""
+        baseline = BaselineProfile()
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/curl", "root"),
+        ]
+        anomalies = detect_anomalies(test_events, baseline)
+        
+        assert 0.0 <= anomalies[0].confidence <= 1.0
+
+
+class TestConfigurableThresholds:
+    """Tests verifying thresholds are configurable and visible."""
+
+    def test_default_thresholds_exposed(self) -> None:
+        """Default threshold constants should be accessible."""
+        # These should be importable module-level constants
+        assert RARITY_COUNT_THRESHOLD >= 1
+        assert 0.0 < RARITY_PERCENTAGE_THRESHOLD < 1.0
+
+    def test_custom_percentage_threshold(self) -> None:
+        """Custom percentage threshold should affect detection."""
+        # Build baseline where relationship is 1% of events
+        baseline_events = (
+            [create_canonical_event("/bin/bash", "/usr/bin/python3", "root")] * 10 +
+            [create_canonical_event("/bin/bash", "/usr/bin/curl", "root")] * 990
+        )
+        baseline = build_baseline(baseline_events)
+        
+        test_events = [
+            create_canonical_event("/bin/bash", "/usr/bin/python3", "root"),
+        ]
+        
+        # With percentage threshold of 0.1% (0.001), 1% should NOT be flagged
+        anomalies = detect_anomalies(
+            test_events, baseline,
+            rarity_count_threshold=1,  # Disable count-based
+            rarity_percentage_threshold=0.001
+        )
+        assert len(anomalies) == 0
+        
+        # With percentage threshold of 5% (0.05), 1% should be flagged
+        anomalies = detect_anomalies(
+            test_events, baseline,
+            rarity_count_threshold=1,  # Disable count-based
+            rarity_percentage_threshold=0.05
+        )
+        assert len(anomalies) == 1
+

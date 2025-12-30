@@ -3,7 +3,7 @@ analyzer.py - Core Analysis Engine
 
 This module contains all system intelligence:
 - Baseline construction (Phase 3)
-- Anomaly detection (Phase 4) - NOT YET IMPLEMENTED
+- Anomaly detection (Phase 4)
 - Chain reconstruction (Phase 5) - NOT YET IMPLEMENTED
 - Report assembly (Phase 6) - NOT YET IMPLEMENTED
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,20 @@ if TYPE_CHECKING:
 
 # Version string for baseline compatibility tracking
 BASELINE_VERSION = "1.0.0"
+
+# -----------------------------------------------------------------------------
+# DETECTION THRESHOLDS (Configurable - Phase 4)
+# -----------------------------------------------------------------------------
+# These thresholds control anomaly detection sensitivity.
+# Adjust based on environment and false positive tolerance.
+
+# Minimum observation count for a relationship to be considered "normal"
+# Relationships observed fewer times than this are flagged as RARE
+RARITY_COUNT_THRESHOLD: int = 3
+
+# Minimum percentage of total events for a relationship to be considered "normal"
+# Relationships below this percentage are flagged as RARE (if above count threshold)
+RARITY_PERCENTAGE_THRESHOLD: float = 0.001  # 0.1% of total events
 
 
 # =============================================================================
@@ -301,3 +316,226 @@ def load_baseline(path: Path) -> BaselineProfile:
         profile.relationships[key] = rel["count"]
     
     return profile
+
+
+# =============================================================================
+# Anomaly Detection (Phase 4)
+# =============================================================================
+
+
+class AnomalyReason(Enum):
+    """
+    Reason why an event was flagged as anomalous.
+    
+    Used to distinguish between completely unknown relationships
+    and relationships that are simply rare.
+    """
+    UNKNOWN = "unknown"      # Relationship never seen in baseline
+    RARE = "rare"            # Relationship seen but below threshold
+
+
+@dataclass(frozen=True)
+class AnomalyResult:
+    """
+    Intermediate result from anomaly detection.
+    
+    This is a purely internal data structure used between detection
+    and report assembly. It contains the raw detection findings without
+    chain reconstruction or full report formatting.
+    
+    Attributes:
+        event: The CanonicalEvent that triggered the anomaly.
+        reason: Why this event was flagged (UNKNOWN or RARE).
+        relationship_key: The (parent_image, child_image, user) tuple.
+        observed_count: How many times this relationship was seen in baseline.
+        baseline_total: Total events in the baseline for context.
+        risk_level: Assigned risk level based on statistical analysis.
+        confidence: Confidence score for the detection (0.0 to 1.0).
+        description: Human-readable explanation of the anomaly.
+    """
+    event: "CanonicalEvent"
+    reason: AnomalyReason
+    relationship_key: tuple[str, str, str]
+    observed_count: int
+    baseline_total: int
+    risk_level: "RiskLevel"
+    confidence: float
+    description: str
+
+
+def detect_anomalies(
+    events: list["CanonicalEvent"],
+    baseline: BaselineProfile,
+    *,
+    rarity_count_threshold: int = RARITY_COUNT_THRESHOLD,
+    rarity_percentage_threshold: float = RARITY_PERCENTAGE_THRESHOLD,
+) -> list[AnomalyResult]:
+    """
+    Detect anomalies by comparing events against a learned baseline.
+    
+    This function is PURELY FUNCTIONAL and does NOT mutate the baseline.
+    Learning happens in Phase 3 (build_baseline); Detection happens here.
+    
+    An event is considered anomalous if its (parent_image, child_image, user)
+    relationship is either:
+    1. UNKNOWN: Never observed in the baseline
+    2. RARE: Observed fewer times than the configured thresholds
+    
+    Risk levels are assigned based on STATISTICAL ANALYSIS ONLY:
+    - CRITICAL: Unknown relationship (never seen)
+    - HIGH: Rare relationship (seen < threshold times)
+    - MEDIUM: Rare by percentage (seen but below % threshold)
+    
+    Args:
+        events: List of CanonicalEvent objects to analyze.
+        baseline: The learned BaselineProfile to compare against (READ-ONLY).
+        rarity_count_threshold: Minimum count for "normal" (default: RARITY_COUNT_THRESHOLD).
+        rarity_percentage_threshold: Minimum % for "normal" (default: RARITY_PERCENTAGE_THRESHOLD).
+    
+    Returns:
+        A list of AnomalyResult objects for events that deviate from baseline.
+        Events that match baseline behavior are NOT included in the result.
+    
+    Raises:
+        TypeError: If events is not a list or contains non-CanonicalEvent items.
+    
+    Example:
+        >>> baseline = load_baseline(Path("baseline.json"))
+        >>> events = load_events(new_telemetry)
+        >>> anomalies = detect_anomalies(events, baseline)
+        >>> for anomaly in anomalies:
+        ...     print(f"{anomaly.risk_level}: {anomaly.description}")
+    """
+    # Import here to avoid circular imports
+    from src.core.events import CanonicalEvent, RiskLevel
+    
+    # Strict type validation - MUST be list[CanonicalEvent]
+    if not isinstance(events, list):
+        raise TypeError(
+            f"events must be a list of CanonicalEvent objects, "
+            f"got {type(events).__name__}"
+        )
+    
+    for idx, event in enumerate(events):
+        if not isinstance(event, CanonicalEvent):
+            raise TypeError(
+                f"Event at index {idx} must be a CanonicalEvent, "
+                f"got {type(event).__name__}. "
+                f"Use loader.load_events() to convert raw data first."
+            )
+    
+    anomalies: list[AnomalyResult] = []
+    
+    for event in events:
+        # Extract relationship key
+        relationship_key = (
+            event.parent.image,
+            event.subject.image,
+            event.metadata.user,
+        )
+        
+        # Check against baseline (READ-ONLY access)
+        observed_count = baseline.get_relationship_count(*relationship_key)
+        
+        # Determine if anomalous
+        anomaly_result = _evaluate_relationship(
+            event=event,
+            relationship_key=relationship_key,
+            observed_count=observed_count,
+            baseline_total=baseline.total_events,
+            rarity_count_threshold=rarity_count_threshold,
+            rarity_percentage_threshold=rarity_percentage_threshold,
+        )
+        
+        if anomaly_result is not None:
+            anomalies.append(anomaly_result)
+    
+    return anomalies
+
+
+def _evaluate_relationship(
+    event: "CanonicalEvent",
+    relationship_key: tuple[str, str, str],
+    observed_count: int,
+    baseline_total: int,
+    rarity_count_threshold: int,
+    rarity_percentage_threshold: float,
+) -> AnomalyResult | None:
+    """
+    Evaluate a single relationship and return an AnomalyResult if anomalous.
+    
+    This is a pure function that performs statistical analysis only.
+    No domain semantics or hardcoded rules are applied.
+    
+    Args:
+        event: The event being evaluated.
+        relationship_key: The (parent_image, child_image, user) tuple.
+        observed_count: How many times seen in baseline.
+        baseline_total: Total events in baseline.
+        rarity_count_threshold: Minimum count threshold.
+        rarity_percentage_threshold: Minimum percentage threshold.
+    
+    Returns:
+        AnomalyResult if anomalous, None if normal.
+    """
+    from src.core.events import RiskLevel
+    
+    parent_image, child_image, user = relationship_key
+    
+    # Case 1: UNKNOWN - Never seen in baseline
+    if observed_count == 0:
+        return AnomalyResult(
+            event=event,
+            reason=AnomalyReason.UNKNOWN,
+            relationship_key=relationship_key,
+            observed_count=0,
+            baseline_total=baseline_total,
+            risk_level=RiskLevel.CRITICAL,
+            confidence=1.0,  # 100% confident it's unknown
+            description=(
+                f"Unknown relationship: '{parent_image}' spawned '{child_image}' "
+                f"as user '{user}'. This combination was never observed in baseline."
+            ),
+        )
+    
+    # Case 2: RARE by count - Seen but below count threshold
+    if observed_count < rarity_count_threshold:
+        confidence = 1.0 - (observed_count / rarity_count_threshold)
+        return AnomalyResult(
+            event=event,
+            reason=AnomalyReason.RARE,
+            relationship_key=relationship_key,
+            observed_count=observed_count,
+            baseline_total=baseline_total,
+            risk_level=RiskLevel.HIGH,
+            confidence=confidence,
+            description=(
+                f"Rare relationship: '{parent_image}' spawned '{child_image}' "
+                f"as user '{user}'. Observed only {observed_count} time(s) in baseline "
+                f"(threshold: {rarity_count_threshold})."
+            ),
+        )
+    
+    # Case 3: RARE by percentage - Above count but below percentage threshold
+    if baseline_total > 0:
+        observed_percentage = observed_count / baseline_total
+        if observed_percentage < rarity_percentage_threshold:
+            confidence = 1.0 - (observed_percentage / rarity_percentage_threshold)
+            return AnomalyResult(
+                event=event,
+                reason=AnomalyReason.RARE,
+                relationship_key=relationship_key,
+                observed_count=observed_count,
+                baseline_total=baseline_total,
+                risk_level=RiskLevel.MEDIUM,
+                confidence=confidence,
+                description=(
+                    f"Statistically rare relationship: '{parent_image}' spawned '{child_image}' "
+                    f"as user '{user}'. Observed {observed_count} time(s) ({observed_percentage:.4%}) "
+                    f"which is below threshold ({rarity_percentage_threshold:.4%})."
+                ),
+            )
+    
+    # Not anomalous - relationship is within normal parameters
+    return None
+
