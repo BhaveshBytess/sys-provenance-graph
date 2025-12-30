@@ -44,6 +44,26 @@ RARITY_COUNT_THRESHOLD: int = 3
 # Relationships below this percentage are flagged as RARE (if above count threshold)
 RARITY_PERCENTAGE_THRESHOLD: float = 0.001  # 0.1% of total events
 
+# -----------------------------------------------------------------------------
+# CHAIN RECONSTRUCTION (Configurable - Phase 5)
+# -----------------------------------------------------------------------------
+# These settings control execution chain reconstruction behavior.
+
+# Maximum depth for parent chain traversal (safety limit)
+# Prevents infinite loops and excessive memory usage
+MAX_CHAIN_DEPTH: int = 10
+
+# Known root process images that terminate chain traversal
+# When these are encountered, the chain is considered complete
+KNOWN_ROOT_IMAGES: frozenset[str] = frozenset({
+    "/sbin/init",
+    "/usr/lib/systemd/systemd",
+    "/lib/systemd/systemd",
+    "systemd",
+    "init",
+    "[kernel]",
+})
+
 
 # =============================================================================
 # Baseline Profile
@@ -538,4 +558,213 @@ def _evaluate_relationship(
     
     # Not anomalous - relationship is within normal parameters
     return None
+
+
+# =============================================================================
+# Chain Reconstruction (Phase 5)
+# =============================================================================
+
+
+def build_event_index(events: list["CanonicalEvent"]) -> dict[str, "CanonicalEvent"]:
+    """
+    Build an O(1) lookup index from process GUID to CanonicalEvent.
+    
+    This index enables efficient parent traversal during chain reconstruction
+    without iterating through the event list for each lookup.
+    
+    Args:
+        events: List of CanonicalEvent objects to index.
+    
+    Returns:
+        A dictionary mapping subject.guid to CanonicalEvent.
+        If multiple events share the same GUID, the last one wins.
+    
+    Raises:
+        TypeError: If events is not a list or contains non-CanonicalEvent items.
+    
+    Example:
+        >>> events = load_events(raw_data)
+        >>> index = build_event_index(events)
+        >>> event = index.get("some-guid")
+    """
+    from src.core.events import CanonicalEvent
+    
+    # Strict type validation
+    if not isinstance(events, list):
+        raise TypeError(
+            f"events must be a list of CanonicalEvent objects, "
+            f"got {type(events).__name__}"
+        )
+    
+    index: dict[str, CanonicalEvent] = {}
+    
+    for idx, event in enumerate(events):
+        if not isinstance(event, CanonicalEvent):
+            raise TypeError(
+                f"Event at index {idx} must be a CanonicalEvent, "
+                f"got {type(event).__name__}."
+            )
+        # Index by subject GUID (the process created by this event)
+        index[event.subject.guid] = event
+    
+    return index
+
+
+def reconstruct_chain(
+    event: "CanonicalEvent",
+    event_index: dict[str, "CanonicalEvent"],
+    *,
+    max_depth: int = MAX_CHAIN_DEPTH,
+    known_roots: frozenset[str] = KNOWN_ROOT_IMAGES,
+) -> list[str]:
+    """
+    Reconstruct the execution chain for a given event.
+    
+    This function traverses parent relationships to build a causal chain
+    from the root ancestor down to the given event. The chain provides
+    context for understanding how a process execution occurred.
+    
+    Traversal terminates when:
+    1. Parent GUID is not found in the index (missing data)
+    2. Maximum depth is reached (safety limit)
+    3. A known root process is reached (e.g., systemd, init)
+    4. A cycle is detected (GUID already visited)
+    
+    The output is ordered chronologically: root/ancestor first, event last.
+    
+    Args:
+        event: The CanonicalEvent to reconstruct the chain for.
+        event_index: Pre-built GUID → CanonicalEvent lookup index.
+                    MUST be built using build_event_index() for O(1) lookups.
+        max_depth: Maximum traversal depth (default: MAX_CHAIN_DEPTH).
+        known_roots: Set of image paths considered root processes.
+    
+    Returns:
+        Ordered list of process GUIDs from root ancestor to the event.
+        The last element is always the event's subject.guid.
+    
+    Example:
+        >>> index = build_event_index(all_events)
+        >>> chain = reconstruct_chain(anomalous_event, index)
+        >>> print(f"Chain: {' -> '.join(chain)}")
+    """
+    # Start with the current event's GUID
+    current_guid = event.subject.guid
+    
+    # Build chain in reverse order (child → parent → grandparent → ...)
+    # We'll reverse it at the end for chronological order
+    chain_reversed: list[str] = [current_guid]
+    
+    # Track visited GUIDs to detect cycles
+    visited: set[str] = {current_guid}
+    
+    # Current position for traversal
+    current_event = event
+    depth = 0
+    
+    while depth < max_depth:
+        # Get parent GUID from current event
+        parent_guid = current_event.parent.guid
+        
+        # Termination: Cycle detected
+        if parent_guid in visited:
+            break
+        
+        # Mark as visited
+        visited.add(parent_guid)
+        
+        # Termination: Parent not in index (missing data / orphan)
+        parent_event = event_index.get(parent_guid)
+        if parent_event is None:
+            # Add parent GUID even if we don't have its event data
+            # This preserves the link information
+            chain_reversed.append(parent_guid)
+            break
+        
+        # Add parent to chain
+        chain_reversed.append(parent_guid)
+        
+        # Termination: Known root process reached
+        parent_image = parent_event.subject.image
+        if _is_root_process(parent_image, known_roots):
+            break
+        
+        # Move to parent for next iteration
+        current_event = parent_event
+        depth += 1
+    
+    # Reverse to get chronological order: root → ... → parent → event
+    chain_reversed.reverse()
+    
+    return chain_reversed
+
+
+def _is_root_process(image_path: str, known_roots: frozenset[str]) -> bool:
+    """
+    Check if an image path represents a known root process.
+    
+    Compares the image path against known root process names/paths.
+    Both exact matches and basename matches are considered.
+    
+    Args:
+        image_path: Path to the process executable.
+        known_roots: Set of known root process identifiers.
+    
+    Returns:
+        True if the image represents a root process.
+    """
+    # Exact match
+    if image_path in known_roots:
+        return True
+    
+    # Basename match (e.g., "/usr/lib/systemd/systemd" matches "systemd")
+    basename = image_path.rsplit("/", 1)[-1] if "/" in image_path else image_path
+    if basename in known_roots:
+        return True
+    
+    return False
+
+
+def enrich_anomalies_with_chains(
+    anomalies: list[AnomalyResult],
+    event_index: dict[str, "CanonicalEvent"],
+    *,
+    max_depth: int = MAX_CHAIN_DEPTH,
+) -> dict[str, list[str]]:
+    """
+    Reconstruct chains for all detected anomalies.
+    
+    This is a convenience function that processes multiple anomalies
+    and returns their chains in a lookup dictionary.
+    
+    Args:
+        anomalies: List of AnomalyResult objects from detect_anomalies().
+        event_index: Pre-built GUID → CanonicalEvent lookup index.
+        max_depth: Maximum traversal depth for each chain.
+    
+    Returns:
+        Dictionary mapping event subject.guid to its reconstructed chain.
+        Each chain is ordered root → ... → event.
+    
+    Example:
+        >>> anomalies = detect_anomalies(events, baseline)
+        >>> index = build_event_index(all_events)
+        >>> chains = enrich_anomalies_with_chains(anomalies, index)
+        >>> for anomaly in anomalies:
+        ...     chain = chains[anomaly.event.subject.guid]
+        ...     print(f"Chain length: {len(chain)}")
+    """
+    chains: dict[str, list[str]] = {}
+    
+    for anomaly in anomalies:
+        event_guid = anomaly.event.subject.guid
+        chain = reconstruct_chain(
+            anomaly.event,
+            event_index,
+            max_depth=max_depth,
+        )
+        chains[event_guid] = chain
+    
+    return chains
+
 
