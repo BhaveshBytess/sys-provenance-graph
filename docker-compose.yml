@@ -1,0 +1,56 @@
+# =============================================================================
+# System Behavior Analyzer - Docker Compose Configuration
+# =============================================================================
+# Provides easy deployment with volume mounts for baseline and data files
+
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------------
+  # API Service - Main analysis endpoint
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sba:latest
+    container_name: sba-api
+    ports:
+      - "8000:8000"
+    environment:
+      - BASELINE_PATH=/data/baseline.json
+    volumes:
+      # Mount baseline file (read-only)
+      - ./data/baseline.json:/data/baseline.json:ro
+      # Mount logs directory (optional)
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+# =============================================================================
+# Usage
+# =============================================================================
+#
+# 1. Build and start:
+#    docker-compose up --build -d
+#
+# 2. Check logs:
+#    docker-compose logs -f api
+#
+# 3. Stop:
+#    docker-compose down
+#
+# 4. Build baseline first (if needed):
+#    docker-compose run --rm api python -m src.cli.main train \
+#      -i /data/events.json -o /data/baseline.json
+#
+# Prerequisites:
+#   - Create ./data directory
+#   - Place baseline.json in ./data/
+#   - Or run train command first to generate baseline
+# =============================================================================
