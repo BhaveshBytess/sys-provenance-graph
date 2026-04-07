@@ -4,7 +4,7 @@ loader.py - Sysmon Log Parser and Normalizer
 This module handles:
 - Parsing raw Sysmon logs (JSON format)
 - Validating required fields
-- Normalizing data into canonical events per CONTRACTS.md
+- Normalizing data into canonical events per docs/contracts.md
 - Rejecting malformed input early (fail fast)
 
 This module must NOT:
@@ -163,7 +163,7 @@ def _normalize_event(raw_event: dict[str, Any]) -> CanonicalEvent:
     Normalize a single raw Sysmon event to canonical format.
     
     This function handles the mapping from Sysmon field names to canonical
-    field names as defined in CONTRACTS.md.
+    field names as defined in docs/contracts.md.
     
     Args:
         raw_event: A dictionary representing a raw Sysmon event.
@@ -203,7 +203,7 @@ def _extract_canonical_fields(raw_event: dict[str, Any]) -> dict[str, Any]:
     Extract and normalize fields from raw Sysmon event to canonical format.
     
     This function maps Sysmon-specific field names to the canonical schema
-    defined in CONTRACTS.md. It supports both the raw Sysmon format and
+    defined in docs/contracts.md. It supports both the raw Sysmon format and
     pre-normalized canonical format.
     
     Args:

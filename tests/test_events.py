@@ -2,7 +2,7 @@
 test_events.py - Unit tests for canonical event and report schemas.
 
 Verifies that the Pydantic models in src/core/events.py correctly
-implement the contracts defined in CONTRACTS.md.
+implement the contracts defined in docs/contracts.md.
 """
 
 from datetime import datetime
@@ -315,11 +315,11 @@ class TestAnomaly:
 
 
 class TestContractCompliance:
-    """Tests verifying compliance with CONTRACTS.md."""
+    """Tests verifying compliance with docs/contracts.md."""
 
     def test_event_identity_uses_guid_not_pid(self, valid_canonical_event: dict) -> None:
         """
-        CONTRACTS.md §3.2: subject.guid is the PRIMARY identifier.
+        docs/contracts.md section 4: subject.guid is the PRIMARY identifier.
         PIDs are informational only.
         """
         event = CanonicalEvent(**valid_canonical_event)
@@ -336,7 +336,7 @@ class TestContractCompliance:
         self, valid_canonical_event: dict
     ) -> None:
         """
-        CONTRACTS.md §3.3: Only PROCESS_CREATE is supported in V1.
+        docs/contracts.md section 4: Only PROCESS_CREATE is supported in V1.
         """
         # PROCESS_CREATE should work
         valid_canonical_event["event_type"] = "PROCESS_CREATE"
@@ -350,7 +350,7 @@ class TestContractCompliance:
 
     def test_anomaly_must_have_description(self) -> None:
         """
-        CONTRACTS.md §4.2: Every anomaly MUST include an explanation.
+        docs/contracts.md section 5: Every anomaly MUST include an explanation.
         """
         with pytest.raises(ValidationError):
             Anomaly(
@@ -364,7 +364,7 @@ class TestContractCompliance:
 
     def test_anomaly_must_reference_chain(self) -> None:
         """
-        CONTRACTS.md §4.2: Every anomaly MUST reference at least one process chain.
+        docs/contracts.md section 5: Every anomaly MUST reference at least one process chain.
         """
         with pytest.raises(ValidationError):
             Anomaly(

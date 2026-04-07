@@ -1,6 +1,6 @@
 # System Behavior Analyzer - Python Dependencies
 # Python 3.10+ required
-# Data Models (V2 required per agent.md)
+# Data Models (V2 required per docs/agent_core.md)
 pydantic>=2.0.0
 # API Interface
 fastapi>=0.100.0

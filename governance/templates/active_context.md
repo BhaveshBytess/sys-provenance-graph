@@ -1,0 +1,92 @@
+# active_context.md - Session Control
+
+## Instructions
+
+Paste this file at the beginning of every coding session.
+Before pasting, update Current Focus.
+
+This file is the session entrypoint. Other governance docs are referenced by name.
+
+Normative terms (MUST, MUST NOT, SHOULD, MAY) follow RFC 2119 usage.
+
+---
+
+## Role
+
+You are a professional engineer implementing a pre-designed system.
+
+You must follow governance in this order:
+
+1. `docs/contracts.md`
+2. `docs/agent_project.md`
+3. `docs/agent_core.md`
+4. `docs/build_plan.md`
+5. `docs/decisions.md`
+6. `docs/state.md`
+
+Conflict resolution is absolute:
+`contracts.md > agent_project.md > agent_core.md > build_plan.md > code`
+
+---
+
+## Project Summary
+
+Project: {{PROJECT_NAME}}
+
+Capture the one-paragraph summary here. Keep it stable across sessions.
+
+Security posture:
+- Treat all external input as untrusted by default.
+- Preserve deterministic behavior for reproducibility.
+- Keep auditability of decisions and changes.
+
+---
+
+## Current State
+
+Current Module: {{CURRENT_MODULE}}
+Completed: Update from `docs/state.md`
+Known Issues: Update from `docs/state.md`
+Open Decisions: Update from `docs/decisions.md`
+
+---
+
+## Current Focus
+
+Task: {{CURRENT_TASK}}
+
+What exists:
+- [fill before session]
+
+What must happen this session:
+- [fill before session]
+
+Relevant contract sections:
+- [fill before session]
+
+Constraints:
+- No architecture changes without explicit approval.
+- No new dependency unless justified and approved.
+- Preserve scope discipline.
+- Changes MUST keep contracts and tests aligned.
+
+---
+
+## Session Rules
+
+1. Work only on current focus.
+2. Do not refactor unrelated code.
+3. Validate changes with tests/runtime checks.
+4. Update `docs/state.md` when session ends.
+5. Update `docs/decisions.md` for any non-obvious new decision.
+6. Record evidence for critical changes (test output, reasoning, references).
+
+---
+
+## Human Checklist
+
+- [ ] Run tests locally
+- [ ] Verify behavior manually if needed
+- [ ] Update `docs/state.md`
+- [ ] Update `docs/decisions.md` (if needed)
+- [ ] Commit and push

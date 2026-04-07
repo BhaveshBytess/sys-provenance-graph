@@ -2,7 +2,7 @@
 
 **Audience:** Humans + Agents
 **Purpose:** Describe **how the system works**, not what the data looks like
-**Authority level:** Below `CONTRACTS.md`, above code
+**Authority level:** Below `docs/contracts.md`, above code
 
 ### `SPEC.md` answers:
 
@@ -115,7 +115,7 @@ The **Core Analysis Engine** is completely independent of interfaces.
 
 * Parse raw Sysmon logs
 * Validate required fields
-* Normalize data into canonical events (per `CONTRACTS.md`)
+* Normalize data into canonical events (per `docs/contracts.md`)
 * Reject malformed input early
 
 **Must NOT:**
@@ -258,7 +258,7 @@ These may be considered in future versions but are not part of this specificatio
 
 ## 9. Authority & Change Control
 
-* `CONTRACTS.md` overrides this document
+* `docs/contracts.md` overrides this document
 * This document overrides code-level assumptions
 * Any changes require explicit review
 

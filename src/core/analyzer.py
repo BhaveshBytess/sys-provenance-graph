@@ -793,7 +793,7 @@ def assemble_report(
     Assemble a complete AnalysisReport from detection results.
     
     This function converts internal detection artifacts (AnomalyResult, chains)
-    into the canonical output contract (AnalysisReport) as defined in CONTRACTS.md.
+    into the canonical output contract (AnalysisReport) as defined in docs/contracts.md.
     
     No semantic inference or interpretive labels are added - the report is a
     pure translation of the detection data.

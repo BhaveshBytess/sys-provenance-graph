@@ -101,6 +101,15 @@ docker-compose down
 
 ```
 sys-provenance-graph/
+├── active_context.md       # Session control entrypoint
+├── docs/                   # 7-file governance framework (project-level)
+│   ├── contracts.md
+│   ├── agent_project.md
+│   ├── agent_core.md
+│   ├── build_plan.md
+│   ├── decisions.md
+│   └── state.md
+├── governance/             # Reusable templates and bootstrap tools
 ├── src/
 │   ├── core/
 │   │   ├── events.py      # Pydantic data models
@@ -112,18 +121,23 @@ sys-provenance-graph/
 │   └── api/
 │       └── main.py        # REST API (FastAPI)
 ├── tests/                  # Unit tests
-├── Dockerfile             # Production container
-├── docker-compose.yml     # Deployment config
-├── requirements.txt       # Python dependencies
+├── Dockerfile              # Production container
+├── docker-compose.yml      # Deployment config
+├── requirements.txt        # Python dependencies
 └── README.md
 ```
 
 ## Documentation
 
-- `CONTRACTS.md` — Immutable data contracts
+- `active_context.md` — Session entrypoint and governance order
+- `docs/contracts.md` — Immutable system contracts and invariants
+- `docs/agent_project.md` — Project-specific constraints and domain rules
+- `docs/agent_core.md` — Reusable execution and debugging discipline
+- `docs/build_plan.md` — Module dependency graph and exit gates
+- `docs/decisions.md` — Architecture decision records
+- `docs/state.md` — Current system state and session log
 - `SPEC.md` — System architecture and responsibilities
-- `EXECUTION_PLAN.md` — Phased implementation strategy
-- `agent.md` — Agent operating manual
+- `governance/` — 7-file framework templates and bootstrap tools
 
 ## Test Results
 

@@ -5,11 +5,11 @@ This module defines the Pydantic models for:
 - Canonical Event Schema (input contract)
 - Analysis Report Schema (output contract)
 
-These schemas are the authoritative data contracts as defined in CONTRACTS.md.
+These schemas are the authoritative data contracts as defined in docs/contracts.md.
 All input telemetry MUST be normalized into CanonicalEvent before analysis.
 All analysis results MUST conform to AnalysisReport before output.
 
-See CONTRACTS.md for full schema specifications and invariants.
+See docs/contracts.md for full schema specifications and invariants.
 """
 
 from datetime import datetime
@@ -167,7 +167,7 @@ class CanonicalEvent(BaseModel, frozen=True):
     """
     Normalized representation of a single system action.
     
-    This is the canonical input schema as defined in CONTRACTS.md §3.1.
+    This is the canonical input schema as defined in docs/contracts.md section 4.
     All input telemetry MUST be normalized into this format before analysis.
     
     An event is semantic (e.g., "process created"), not raw (e.g., "syscall 59").
@@ -269,7 +269,7 @@ class AnalysisReport(BaseModel, frozen=True):
     """
     Structured analysis report.
     
-    This is the canonical output schema as defined in CONTRACTS.md §4.1.
+    This is the canonical output schema as defined in docs/contracts.md section 5.
     All analysis results MUST conform to this format.
     
     Output Guarantees:
