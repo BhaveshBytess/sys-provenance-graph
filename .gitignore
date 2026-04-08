@@ -1,0 +1,37 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage outputs
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local temp workspace
+.tmp/
+
+# IDE and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local runtime reports
+audit_report.json
+examples/mordor/smoke_test_report.json
+examples/mordor/split_test_report.json
+
+# External Mordor datasets (local-only)
+examples/mordor/metasploit_logonpasswords_lsass_memory_dump.json
+examples/mordor/psh_python_webserver_2020-10-2900161507.json
+
+# Local training/demo artifacts
+examples/baseline.json
+examples/training_events.json
+examples/test_events.json

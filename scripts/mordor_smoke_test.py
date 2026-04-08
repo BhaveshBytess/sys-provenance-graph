@@ -1,14 +1,4 @@
-"""
-mordor_smoke_test.py - End-to-end smoke test for Mordor datasets.
-
-This script runs the adapter + baseline + detection + report flow:
-1. Load smaller Mordor file as baseline data.
-2. Build baseline profile from baseline events.
-3. Load larger Mordor file as test data.
-4. Run analysis pipeline on test events.
-5. Save analysis report to JSON.
-6. Print concise smoke test summary.
-"""
+"""Quick end-to-end smoke run for Mordor datasets."""
 
 from __future__ import annotations
 
@@ -32,7 +22,10 @@ from src.core.pipeline import run_pipeline
 def _default_mordor_paths(repo_root: Path) -> tuple[Path, Path]:
     """Return (smaller_file, larger_file) from examples/mordor/*.json."""
     mordor_dir = repo_root / "examples" / "mordor"
-    files = sorted(mordor_dir.glob("*.json"), key=lambda p: p.stat().st_size)
+    files = sorted(
+        [path for path in mordor_dir.glob("*.json") if not path.name.endswith("_report.json")],
+        key=lambda p: p.stat().st_size,
+    )
 
     if len(files) < 2:
         raise FileNotFoundError(
@@ -43,7 +36,7 @@ def _default_mordor_paths(repo_root: Path) -> tuple[Path, Path]:
 
 
 def _count_eventid_1_records(file_path: Path) -> int:
-    """Count parseable JSONL records where EventID == 1."""
+    """Count parseable rows where EventID == 1."""
     count = 0
     with file_path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -51,16 +44,16 @@ def _count_eventid_1_records(file_path: Path) -> int:
             if not stripped:
                 continue
             try:
-                obj = json.loads(stripped)
+                record = json.loads(stripped)
             except json.JSONDecodeError:
                 continue
-            if obj.get("EventID") == 1:
+            if record.get("EventID") == 1:
                 count += 1
     return count
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for the smoke test script."""
+    """Parse CLI options."""
     repo_root = Path(__file__).resolve().parents[1]
     default_baseline, default_test = _default_mordor_paths(repo_root)
     default_report = repo_root / "examples" / "mordor" / "smoke_test_report.json"
@@ -91,14 +84,14 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _serialize_report(report: Any, output_path: Path) -> None:
-    """Write AnalysisReport to JSON file using Pydantic JSON mode."""
+    """Write report JSON to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(report.model_dump(mode="json"), handle, indent=2)
 
 
 def main() -> None:
-    """Execute the full Mordor smoke test flow."""
+    """Run smoke test and print a compact summary."""
     args = _parse_args()
 
     baseline_file = args.baseline_file
@@ -113,11 +106,9 @@ def main() -> None:
 
     baseline_profile = build_baseline(baseline_events)
 
-    # Shared CLI/API path for full analysis orchestration.
     report = run_pipeline(test_events, baseline_profile)
     _serialize_report(report, output_file)
 
-    # Reuse core anomaly logic for smoke summary breakdown.
     anomaly_results = detect_anomalies(test_events, baseline_profile)
     unknown_count = sum(1 for a in anomaly_results if a.reason == AnomalyReason.UNKNOWN)
     rare_count = sum(1 for a in anomaly_results if a.reason == AnomalyReason.RARE)

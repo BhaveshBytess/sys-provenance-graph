@@ -1,14 +1,4 @@
-"""
-mordor_adapter.py - Mordor JSONL Adapter
-
-This module handles:
-- Reading Mordor JSONL logs (one JSON object per line)
-- Filtering Sysmon Process Create events (EventID == 1)
-- Mapping Mordor fields to CanonicalEvent
-- Skipping malformed or incomplete records with warnings
-
-This adapter is a boundary module and must NOT contain analysis logic.
-"""
+"""Mordor JSONL boundary adapter."""
 
 from __future__ import annotations
 
@@ -47,18 +37,7 @@ _REQUIRED_FIELDS = (
 
 
 def load_mordor_events(file_path: str | Path) -> list[CanonicalEvent]:
-    """
-    Load and normalize Mordor JSONL data into canonical events.
-
-    The adapter reads one JSON object per line, keeps only EventID 1 records,
-    and maps each valid record into a CanonicalEvent.
-
-    Args:
-        file_path: Path to a Mordor JSONL file.
-
-    Returns:
-        A list of validated CanonicalEvent objects.
-    """
+    """Load a Mordor JSONL file and return canonical process-create events."""
     path = Path(file_path)
     events: list[CanonicalEvent] = []
 
@@ -72,7 +51,7 @@ def load_mordor_events(file_path: str | Path) -> list[CanonicalEvent]:
                 raw_event = json.loads(stripped)
             except json.JSONDecodeError as exc:
                 logger.warning(
-                    "Skipping line %d in %s: invalid JSON (%s)",
+                    "Skipping line %d in %s: bad JSON (%s)",
                     line_number,
                     path,
                     exc,
@@ -94,11 +73,7 @@ def _normalize_mordor_event(
     line_number: int,
     source_path: Path,
 ) -> CanonicalEvent | None:
-    """
-    Convert a single Mordor EventID 1 record into CanonicalEvent.
-
-    Returns None when required fields are missing or values are invalid.
-    """
+    """Map one EventID=1 record to CanonicalEvent, or return None."""
     missing_fields = _missing_required_fields(raw_event)
     if missing_fields:
         logger.warning(
@@ -158,7 +133,7 @@ def _normalize_mordor_event(
 
 
 def _missing_required_fields(raw_event: dict[str, Any]) -> list[str]:
-    """Return a list of required fields missing from a Mordor event."""
+    """Collect required Mordor keys that are absent."""
     missing: list[str] = []
 
     for field in _REQUIRED_FIELDS:
@@ -176,7 +151,7 @@ def _missing_required_fields(raw_event: dict[str, Any]) -> list[str]:
 
 
 def _parse_timestamp(value: Any) -> datetime:
-    """Parse timestamp values in Mordor Sysmon formats into datetime."""
+    """Parse Mordor/Sysmon timestamp formats into datetime."""
     if isinstance(value, datetime):
         return value
 
@@ -200,10 +175,5 @@ def _parse_timestamp(value: Any) -> datetime:
 
 
 def _derive_boot_id(hostname: str) -> UUID:
-    """
-    Derive a stable boot_id fallback from hostname.
-
-    Mordor records do not include boot_id. We derive a deterministic UUID
-    to satisfy the canonical schema requirement.
-    """
+    """Derive deterministic fallback boot_id from hostname."""
     return uuid5(NAMESPACE_DNS, hostname.lower())

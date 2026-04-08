@@ -1,14 +1,4 @@
-"""
-mordor_split_test.py - Split-baseline smoke test for a Mordor dataset.
-
-This script runs the adapter + baseline + detection + report flow:
-1. Load the larger Mordor file.
-2. Split loaded events 70/30 (train/test).
-3. Build baseline profile from the 70% train split.
-4. Run analysis pipeline on the 30% test split.
-5. Save analysis report to JSON.
-6. Print concise smoke test summary.
-"""
+"""Run a simple 70/30 split smoke test on one Mordor JSONL file."""
 
 from __future__ import annotations
 
@@ -30,9 +20,12 @@ from src.core.pipeline import run_pipeline
 
 
 def _default_larger_mordor_path(repo_root: Path) -> Path:
-    """Return the largest file from examples/mordor/*.json."""
+    """Pick the largest JSON file in examples/mordor."""
     mordor_dir = repo_root / "examples" / "mordor"
-    files = sorted(mordor_dir.glob("*.json"), key=lambda p: p.stat().st_size)
+    files = sorted(
+        [path for path in mordor_dir.glob("*.json") if not path.name.endswith("_report.json")],
+        key=lambda p: p.stat().st_size,
+    )
 
     if not files:
         raise FileNotFoundError(f"No Mordor JSON files found in {mordor_dir}")
@@ -41,7 +34,7 @@ def _default_larger_mordor_path(repo_root: Path) -> Path:
 
 
 def _count_eventid_1_records(file_path: Path) -> int:
-    """Count parseable JSONL records where EventID == 1."""
+    """Count parseable rows where EventID == 1."""
     count = 0
     with file_path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -49,16 +42,16 @@ def _count_eventid_1_records(file_path: Path) -> int:
             if not stripped:
                 continue
             try:
-                obj = json.loads(stripped)
+                record = json.loads(stripped)
             except json.JSONDecodeError:
                 continue
-            if obj.get("EventID") == 1:
+            if record.get("EventID") == 1:
                 count += 1
     return count
 
 
 def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for the split smoke test."""
+    """Parse CLI options."""
     repo_root = Path(__file__).resolve().parents[1]
     default_input = _default_larger_mordor_path(repo_root)
     default_report = repo_root / "examples" / "mordor" / "split_test_report.json"
@@ -83,17 +76,17 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _serialize_report(report: Any, output_path: Path) -> None:
-    """Write AnalysisReport to JSON file using Pydantic JSON mode."""
+    """Write report JSON to disk."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(report.model_dump(mode="json"), handle, indent=2)
 
 
 def _split_events(events: list[Any], train_ratio: float = 0.7) -> tuple[list[Any], list[Any]]:
-    """Split events into first train_ratio (train) and remaining (test)."""
+    """Split events by order into baseline and test partitions."""
     split_index = int(len(events) * train_ratio)
 
-    # Ensure both sides are non-empty when possible.
+    # Keep both partitions non-empty when at least 2 events exist.
     if len(events) >= 2:
         split_index = min(max(split_index, 1), len(events) - 1)
 
@@ -101,7 +94,7 @@ def _split_events(events: list[Any], train_ratio: float = 0.7) -> tuple[list[Any
 
 
 def main() -> None:
-    """Execute the full split-baseline Mordor smoke test flow."""
+    """Run split smoke test and print a compact summary."""
     args = _parse_args()
 
     input_file = args.input_file
@@ -113,12 +106,9 @@ def main() -> None:
     baseline_events, test_events = _split_events(loaded_events, train_ratio=0.7)
 
     baseline_profile = build_baseline(baseline_events)
-
-    # Shared CLI/API path for full analysis orchestration.
     report = run_pipeline(test_events, baseline_profile)
     _serialize_report(report, output_file)
 
-    # Reuse core anomaly logic for smoke summary breakdown.
     anomaly_results = detect_anomalies(test_events, baseline_profile)
     unknown_count = sum(1 for a in anomaly_results if a.reason == AnomalyReason.UNKNOWN)
     rare_count = sum(1 for a in anomaly_results if a.reason == AnomalyReason.RARE)
@@ -131,7 +121,7 @@ def main() -> None:
     total_loaded = len(baseline_events) + len(test_events)
     total_failed = max(candidate_events - total_loaded, 0)
 
-    print("Mordor Smoke Test Summary")
+    print("Mordor Split Smoke Test Summary")
     print(f"Baseline file: {input_file} [first 70% split]")
     print(f"Test file: {input_file} [last 30% split]")
     print(f"Report path: {output_file}")

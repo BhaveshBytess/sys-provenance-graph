@@ -1,9 +1,4 @@
-"""
-test_mordor_adapter.py - Unit tests for the Mordor JSONL adapter.
-
-Verifies that the adapter correctly filters EventID 1 records,
-maps Mordor fields to CanonicalEvent, and safely skips invalid rows.
-"""
+"""Tests for the Mordor JSONL adapter."""
 
 import json
 from datetime import datetime
@@ -14,17 +9,9 @@ import pytest
 from src.adapters.mordor_adapter import load_mordor_events
 from src.core.events import CanonicalEvent, EventType
 
-
-# =============================================================================
-# Test Fixtures
-# =============================================================================
-
-
 @pytest.fixture
 def mordor_event_id_1_sample() -> dict:
-    """
-    A real Mordor EventID=1 sample from examples/mordor/SCHEMA_NOTES.md.
-    """
+    """Real EventID=1 sample sourced from examples/mordor/SCHEMA_NOTES.md."""
     return {
         "SourceName": "Microsoft-Windows-Sysmon",
         "ProviderGuid": "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}",
@@ -77,17 +64,11 @@ def write_jsonl(tmp_path):
 
     return _write_jsonl
 
-
-# =============================================================================
-# Adapter Tests
-# =============================================================================
-
-
 def test_valid_event_parses(
     mordor_event_id_1_sample: dict,
     write_jsonl,
 ) -> None:
-    """A real Mordor EventID=1 record should map to CanonicalEvent correctly."""
+    """A valid EventID=1 row maps into a CanonicalEvent."""
     file_path = write_jsonl([mordor_event_id_1_sample])
 
     events = load_mordor_events(file_path)
@@ -127,7 +108,7 @@ def test_missing_required_fields_skipped(
     write_jsonl,
     caplog,
 ) -> None:
-    """EventID=1 records missing required fields should be skipped without crash."""
+    """Rows missing required fields are skipped without raising."""
     missing_process_guid = dict(mordor_event_id_1_sample)
     del missing_process_guid["ProcessGuid"]
 
@@ -147,23 +128,23 @@ def test_batch_conversion(
     mordor_event_id_1_sample: dict,
     write_jsonl,
 ) -> None:
-    """Mixed batches should return only valid EventID=1 canonical events."""
+    """Mixed batches keep only valid EventID=1 rows."""
     records: list[dict] = []
 
-    # 5 valid EventID=1 records
+    # Add 5 valid EventID=1 rows.
     for idx in range(5):
         valid = dict(mordor_event_id_1_sample)
         valid["ProcessGuid"] = f"{{81056205-565c-64dc-2304-00000000080{idx}}}"
         valid["ProcessId"] = str(7000 + idx)
         records.append(valid)
 
-    # 3 non-process-create records
+    # Add 3 non-process-create rows.
     for _ in range(3):
         non_process = dict(mordor_event_id_1_sample)
         non_process["EventID"] = 4688
         records.append(non_process)
 
-    # 2 EventID=1 but invalid (missing required field)
+    # Add 2 EventID=1 rows missing required fields.
     invalid_1 = dict(mordor_event_id_1_sample)
     del invalid_1["Image"]
     records.append(invalid_1)
@@ -172,7 +153,7 @@ def test_batch_conversion(
     del invalid_2["ProcessGuid"]
     records.append(invalid_2)
 
-    # 1 EventID=1 but invalid PID type
+    # Add 1 EventID=1 row with invalid PID type.
     invalid_3 = dict(mordor_event_id_1_sample)
     invalid_3["ProcessId"] = "not-an-int"
     records.append(invalid_3)
@@ -190,7 +171,7 @@ def test_field_types(
     mordor_event_id_1_sample: dict,
     write_jsonl,
 ) -> None:
-    """Converted event fields should have expected CanonicalEvent types."""
+    """Mapped fields preserve expected CanonicalEvent types."""
     file_path = write_jsonl([mordor_event_id_1_sample])
 
     events = load_mordor_events(file_path)
