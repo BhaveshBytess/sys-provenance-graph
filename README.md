@@ -116,14 +116,20 @@ sys-provenance-graph/
 │   │   ├── loader.py      # Sysmon event parser
 │   │   ├── analyzer.py    # Detection engine
 │   │   └── pipeline.py    # Shared analysis pipeline
+│   ├── adapters/
+│   │   └── mordor_adapter.py  # Mordor JSONL -> CanonicalEvent adapter
 │   ├── cli/
 │   │   └── main.py        # CLI interface (Typer)
 │   └── api/
 │       └── main.py        # REST API (FastAPI)
+├── scripts/
+│   ├── mordor_smoke_test.py   # Baseline/test smoke run against Mordor datasets
+│   └── mordor_split_test.py   # 70/30 split-baseline smoke run
 ├── tests/                  # Unit tests
 ├── Dockerfile              # Production container
 ├── docker-compose.yml      # Deployment config
 ├── requirements.txt        # Python dependencies
+├── VALIDATION.md            # Latest validation evidence and outcomes
 └── README.md
 ```
 
@@ -138,6 +144,29 @@ sys-provenance-graph/
 - `docs/state.md` — Current system state and session log
 - `SPEC.md` — System architecture and responsibilities
 - `governance/` — 7-file framework templates and bootstrap tools
+- `VALIDATION.md` — Validation runbook and latest execution evidence
+
+## Mordor Validation
+
+Run adapter tests:
+```bash
+python -m pytest -q tests/test_mordor_adapter.py
+```
+
+Run smoke test with explicit dataset paths:
+```bash
+python scripts/mordor_smoke_test.py \
+  --baseline-file examples/mordor/psh_python_webserver_2020-10-2900161507.json \
+  --test-file examples/mordor/metasploit_logonpasswords_lsass_memory_dump.json \
+  --output examples/mordor/smoke_test_report.json
+```
+
+Run split-baseline smoke test:
+```bash
+python scripts/mordor_split_test.py \
+  --input-file examples/mordor/metasploit_logonpasswords_lsass_memory_dump.json \
+  --output examples/mordor/split_test_report.json
+```
 
 ## Test Results
 

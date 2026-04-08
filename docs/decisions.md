@@ -49,6 +49,23 @@ Status: Accepted
 
 ---
 
+## D005: Mordor Validation with Explicit Dataset Arguments
+Date: 2026-04-09
+Context: `examples/mordor` now contains generated report `.json` files in addition to source JSONL telemetry files.
+Decision: Perform validation using explicit dataset arguments for `scripts/mordor_smoke_test.py` and `scripts/mordor_split_test.py` to ensure JSONL inputs are used.
+Consequence: Validation remains reliable while default auto-selection behavior in smoke script is documented as a caveat.
+Status: Accepted
+Owners: Maintainers
+Alternatives considered:
+- Option A: Keep relying on default auto-selection in smoke script.
+- Option B: Explicitly pass source JSONL paths during validation.
+Validation evidence:
+- `python -m pytest -q tests/test_mordor_adapter.py` -> 5 passed
+- `python scripts/mordor_smoke_test.py --baseline-file ... --test-file ...` -> pass
+- `python scripts/mordor_split_test.py --input-file ...` -> pass
+
+---
+
 ## Template For New Decisions
 
 ## DXXX: Title

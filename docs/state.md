@@ -1,17 +1,17 @@
 # state.md - Current System State
 
-Last Updated: 2026-04-06
+Last Updated: 2026-04-09
 Project: System Behavior Analyzer
 
 ---
 
 ## Current Module
 
-Module 8 - Governance Migration
+Module 8 - Governance Migration and Validation Evidence
 
 ## Current Focus
 
-Integrate 7-file governance framework
+Document and validate Mordor adapter and smoke workflows
 
 ## Completed Modules
 
@@ -23,13 +23,18 @@ Integrate 7-file governance framework
 - [x] Module 5 - Chain reconstruction
 - [x] Module 6 - Report assembly
 - [x] Module 7 - Interfaces and containerization
-- [ ] Module 8 - Governance migration and cleanup
+- [x] Module 8 - Governance migration and cleanup
 
 ## Verification Snapshot
 
-- Last test run: Not executed in this governance-only session.
-- Result summary: No runtime code changes in core behavior.
-- Outstanding failures: Unknown (tests not rerun in this session).
+- Last test run: 2026-04-09
+- Result summary:
+	- `python -m pytest -q tests/test_mordor_adapter.py` -> 5 passed
+	- `python scripts/mordor_smoke_test.py` -> requires explicit dataset args when report `.json` files are present in `examples/mordor`
+	- `python scripts/mordor_smoke_test.py --baseline-file ... --test-file ...` -> pass
+	- `python scripts/mordor_split_test.py --input-file ...` -> pass
+- Outstanding failures:
+	- Default auto-selection in `scripts/mordor_smoke_test.py` can pick non-JSONL `.json` files and fail.
 
 ## Operational Updates
 
@@ -55,6 +60,7 @@ Integrate 7-file governance framework
 |------|-----------|----------------|--------------|
 | 2026-04-06 | 1 | Governance scaffold initialized | Populate project-specific modules and contracts |
 | 2026-04-06 | 2 | Migrated legacy workflow policy into root 7-file framework | Update references, remove legacy files, and close Module 8 |
+| 2026-04-09 | 3 | Added Mordor validation evidence (`VALIDATION.md`) and refreshed project docs | Optional fix for smoke script default file selection |
 
 ## Next Session Checklist
 
