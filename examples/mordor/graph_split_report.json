@@ -1,0 +1,153 @@
+{
+  "input_file": "C:\\Users\\oumme\\OneDrive\\Desktop\\sys-provenance-graph\\examples\\mordor\\metasploit_logonpasswords_lsass_memory_dump.json",
+  "baseline_window": "first_70_percent",
+  "test_window": "last_30_percent",
+  "baseline_graph": {
+    "total_nodes": 35,
+    "total_edges": 38,
+    "density": 0.031932773109243695,
+    "most_connected_nodes": [
+      {
+        "image": "C:\\Windows\\System32\\cmd.exe",
+        "degree": 14
+      },
+      {
+        "image": "C:\\Windows\\System32\\svchost.exe",
+        "degree": 10
+      },
+      {
+        "image": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "degree": 4
+      },
+      {
+        "image": "C:\\Windows\\System32\\CompatTelRunner.exe",
+        "degree": 4
+      },
+      {
+        "image": "C:\\Windows\\System32\\conhost.exe",
+        "degree": 4
+      }
+    ],
+    "isolated_nodes": [
+      "C:\\Windows\\System32\\backgroundTaskHost.exe",
+      "C:\\Windows\\System32\\CompPkgSrv.exe",
+      "C:\\Windows\\System32\\RuntimeBroker.exe",
+      "C:\\Windows\\System32\\wbem\\WmiPrvSE.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\92.0.902.67\\identity_helper.exe",
+      "C:\\Windows\\System32\\consent.exe",
+      "C:\\Windows\\System32\\dllhost.exe",
+      "C:\\Windows\\System32\\SearchIndexer.exe",
+      "C:\\Windows\\System32\\SearchFilterHost.exe",
+      "C:\\Windows\\System32\\systeminfo.exe",
+      "C:\\Windows\\servicing\\TrustedInstaller.exe",
+      "C:\\Windows\\WinSxS\\amd64_microsoft-windows-servicingstack_31bf3856ad364e35_10.0.19041.1940_none_7dd80d767cb5c7b0\\TiWorker.exe",
+      "C:\\Windows\\System32\\whoami.exe",
+      "C:\\Windows\\System32\\tasklist.exe",
+      "C:\\Windows\\System32\\taskhostw.exe",
+      "C:\\Windows\\System32\\reg.exe",
+      "C:\\Windows\\System32\\gpresult.exe",
+      "C:\\Windows\\System32\\powercfg.exe",
+      "C:\\Windows\\System32\\wevtutil.exe",
+      "C:\\Windows\\System32\\ipconfig.exe",
+      "C:\\Windows\\System32\\ROUTE.EXE",
+      "C:\\Windows\\System32\\certutil.exe"
+    ]
+  },
+  "test_graph": {
+    "total_nodes": 7,
+    "total_edges": 6,
+    "density": 0.14285714285714285,
+    "most_connected_nodes": [
+      {
+        "image": "C:\\Windows\\System32\\cmd.exe",
+        "degree": 6
+      },
+      {
+        "image": "C:\\Windows\\System32\\conhost.exe",
+        "degree": 1
+      },
+      {
+        "image": "C:\\Windows\\System32\\certutil.exe",
+        "degree": 1
+      },
+      {
+        "image": "C:\\Windows\\System32\\cscript.exe",
+        "degree": 1
+      },
+      {
+        "image": "C:\\Windows\\System32\\netsh.exe",
+        "degree": 1
+      }
+    ],
+    "isolated_nodes": [
+      "C:\\Windows\\System32\\conhost.exe",
+      "C:\\Windows\\System32\\certutil.exe",
+      "C:\\Windows\\System32\\cscript.exe",
+      "C:\\Windows\\System32\\netsh.exe",
+      "C:\\Windows\\System32\\wevtutil.exe",
+      "C:\\Windows\\System32\\dxdiag.exe"
+    ]
+  },
+  "anomaly_count": 1,
+  "anomalies_with_graph_risk_factors": 1,
+  "anomalies": [
+    {
+      "reason": "unknown",
+      "relationship_key": [
+        "C:\\Windows\\System32\\cmd.exe",
+        "C:\\Windows\\System32\\dxdiag.exe",
+        "PANDALAB\\pedro.gustavo"
+      ],
+      "observed_count": 0,
+      "baseline_total": 188,
+      "risk_level": "CRITICAL",
+      "confidence": 1.0,
+      "description": "Unknown relationship: 'C:\\Windows\\System32\\cmd.exe' spawned 'C:\\Windows\\System32\\dxdiag.exe' as user 'PANDALAB\\pedro.gustavo'. This combination was never observed in baseline.",
+      "event": {
+        "event_id": "34c7a6f2-9192-4859-ad1e-8d59049b2d5d",
+        "timestamp": "2023-08-16T05:00:06.412000",
+        "host": {
+          "hostname": "MKT01.pandalab.com",
+          "boot_id": "b39bca11-f013-5806-a453-6826967c6be5"
+        },
+        "event_type": "PROCESS_CREATE",
+        "subject": {
+          "type": "process",
+          "guid": "{81056205-57d6-64dc-2f05-000000000800}",
+          "pid": 3796,
+          "image": "C:\\Windows\\System32\\dxdiag.exe"
+        },
+        "parent": {
+          "guid": "{81056205-57d6-64dc-2d05-000000000800}",
+          "image": "C:\\Windows\\System32\\cmd.exe"
+        },
+        "object": {
+          "type": "null",
+          "guid": null,
+          "path_or_address": null
+        },
+        "metadata": {
+          "command_line": "dxdiag  /t dxdiag.txt",
+          "user": "PANDALAB\\pedro.gustavo",
+          "cwd": "C:\\Users\\PEDRO~1.GUS\\AppData\\Local\\Temp\\RPTB206.tmp\\CabFolder\\"
+        }
+      },
+      "parent_node_features": {
+        "in_degree": 2,
+        "out_degree": 12,
+        "total_spawned": 90,
+        "total_spawned_as_child": 46,
+        "user_count": 2,
+        "is_leaf": false,
+        "is_root": false
+      },
+      "child_node_features": null,
+      "edge_features": null,
+      "graph_risk_factors": [
+        "Child process C:\\Windows\\System32\\dxdiag.exe was never seen in baseline.",
+        "Relationship C:\\Windows\\System32\\cmd.exe -> C:\\Windows\\System32\\dxdiag.exe does not exist in the baseline process graph.",
+        "Child process C:\\Windows\\System32\\dxdiag.exe is a new leaf node in test activity and was never seen in baseline."
+      ]
+    }
+  ]
+}

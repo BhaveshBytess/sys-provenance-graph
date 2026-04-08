@@ -191,6 +191,18 @@ pytest -v
 - Python 3.10+
 - See `requirements.txt` for dependencies
 
+## Validation Against Real-World Data
+
+This system has been validated against real-world Sysmon telemetry from the OTRF Mordor Security Datasets, including benign activity and LSASS credential-dumping attack campaigns.
+
+Key results:
+- Cross-dataset test: demonstrated baseline sensitivity - undersized baselines produce 99% false positive rate
+- Same-environment 70/30 split: 1 true anomaly detected out of 269 events, zero false positives
+- Graph-enriched analysis: added 3 structural risk factors explaining WHY the detection is suspicious
+- See VALIDATION.md for full experiment details and methodology
+
+v1.1 adds a graph analysis layer (NetworkX) that models process relationships as a directed graph and enriches anomaly results with structural risk factors for explainability.
+
 ## License
 
 Internal use only.
